@@ -1,0 +1,112 @@
+#![no_std]
+#![no_main]
+#![deny(
+    clippy::mem_forget,
+    reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
+    holding buffers for the duration of a data transfer."
+)]
+#![deny(clippy::large_stack_frames)]
+use dht11_demo2::dht11::Dht11Manager;
+use embedded_graphics::{Drawable, pixelcolor::Rgb565, prelude::{DrawTarget, Point, Primitive, RgbColor}, primitives::{Circle, PrimitiveStyle, Triangle}};
+use embedded_hal_bus::spi::ExclusiveDevice;
+use core::ptr::addr_of_mut;
+use defmt::info;
+use esp_hal::gpio::Level;
+use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{clock::CpuClock, gpio::Flex, peripherals::Peripherals, system::Stack};
+use esp_hal::{delay::Delay, main};
+use esp_hal::{gpio, interrupt::software::SoftwareInterruptControl, spi::master::Config};
+use esp_hal::{
+    gpio::{Io, Output, OutputConfig},
+    rtc_cntl::Rtc,
+    system::CpuControl,
+};
+use mipidsi::{Builder, interface::SpiInterface,models::ST7789};
+use panic_rtt_target as _;
+extern crate alloc;
+
+esp_bootloader_esp_idf::esp_app_desc!();
+
+#[allow(clippy::large_stack_frames)]
+#[main]
+fn main() -> ! {
+    // const LCD_SCL_GPIO_NUM: u8 = 5;
+    // const LCD_SDA_GPIO_NUM: u8 = 6;
+    // const LCD_RES_GPIO_NUM: u8 = 7;
+    // const LCD_DC_GPIO_NUM: u8 = 15;
+    // const LCD_CS_GPIO_NUM: u8 = 16;
+    // const LCD_BLK_GPIO_NUM: u8 = 8;
+
+    rtt_target::rtt_init_defmt!();
+    static mut APP_CORE_STACK: Stack<8192> = Stack::new();
+    let mut delay = Delay::new();
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(config);
+    let dht11_pin = Flex::new(peripherals.GPIO40);
+
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let software_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0);
+
+    let cpu1_task = move || cpu1_task(&delay, dht11_pin);
+
+    let stack = unsafe { &mut *addr_of_mut!(APP_CORE_STACK) };
+    esp_rtos::start_second_core(
+        peripherals.CPU_CTRL,
+        software_interrupt.software_interrupt0,
+        software_interrupt.software_interrupt1,
+        stack,
+        cpu1_task,
+    );
+
+    let dc = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
+    let mut rst = Output::new(peripherals.GPIO7, Level::Low, OutputConfig::default());
+    rst.set_high();
+
+    let cs =  Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
+    let spi = esp_hal::spi::master::Spi::new(peripherals.SPI2, Config::default())
+        .unwrap()
+        .with_sck(peripherals.GPIO5)
+        // .with_cs(cs) //不要在这传入 cs，留给下面的 ExclusiveDevice
+        .with_mosi(peripherals.GPIO6);
+
+    let spi_device = ExclusiveDevice::new_no_delay(spi, cs).unwrap();
+    let mut buffer = [0_u8; 512];
+
+    let di = SpiInterface::new(spi_device, dc, &mut buffer);
+    let mut display = Builder::new(ST7789, di)
+        .reset_pin(rst)
+        .init(&mut delay)
+        .unwrap();
+
+    display.clear(Rgb565::BLACK).unwrap();
+
+    draw_text(&mut display,).unwrap();
+    loop {
+        delay.delay_millis(2000);
+    }
+}
+
+fn draw_text<T: DrawTarget<Color = Rgb565>>(display: &mut T) -> Result<(), T::Error> {
+    
+
+    Ok(())
+}
+
+fn cpu1_task(delay: &Delay, dht11_pin: Flex<'static>) -> ! {
+    let mut dht11 = Dht11Manager::new(dht11_pin, *delay);
+
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
+
+    loop {
+        delay.delay_millis(2000);
+        match dht11.read() {
+            Ok((temp, hum)) => {
+                info!("DHT11 - Temperature: {} °C, humidity: {} %", temp, hum);
+            }
+            Err(_) => {
+                defmt::dbg!("Failed to read DHT11 sensor");
+            }
+        }
+    }
+}
