@@ -10,14 +10,14 @@ use core::cell::RefCell;
 use core::ptr::addr_of_mut;
 use critical_section::Mutex;
 use defmt::info;
-use dht11_demo2::dht11::Dht11Manager;
+use dht11_demo2::{BdfTextStyle, dht11::Dht11Manager, regular_font::REGULAR_FONT};
 use embedded_graphics::{
     Drawable as _,
     mono_font::{
         MonoTextStyle,
-        iso_8859_1::{ FONT_10X20},
+        iso_8859_1::FONT_10X20,
     },
-    pixelcolor::Rgb565,
+    pixelcolor::{BinaryColor, Rgb565},
     prelude::{Dimensions, DrawTarget, Point, RgbColor, Size},
     primitives::Rectangle,
     text::{Alignment, Text},
@@ -31,7 +31,7 @@ use esp_hal::{gpio, time::Rate};
 use esp_hal::{interrupt::software::SoftwareInterruptControl, spi::master::Config};
 use mipidsi::{Builder, interface::SpiInterface, models::ST7789};
 use panic_rtt_target as _;
-
+use embedded_graphics_framebuf::FrameBuf;
 extern crate alloc;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -102,13 +102,18 @@ fn main() -> ! {
 
     let mut last_temp: u8 = 255;
     let mut last_hum: u8 = 255;
+
+    // 创建 FrameBuf 用于双缓冲，避免闪烁
+    // 使用 Rgb565 颜色格式，大小为 200x80 足够容纳两行文本
+    let mut data = [Rgb565::BLACK; 200 * 80];
+    let mut fbuf: FrameBuf<Rgb565, &mut [Rgb565; 200 * 80]> = FrameBuf::new(&mut data, 200, 80);
+    
     loop {
         delay.delay_millis(2000);
         // 使用 get_dht11_data() 获取温度和湿度
         let (temp, hum) = get_dht11_data();
         if temp != last_temp || hum != last_hum {
-            display.clear(Rgb565::BLACK).unwrap();
-            draw_text(&mut display, temp, hum).unwrap();
+            draw_text(&mut display, temp, hum, &mut fbuf).unwrap();
             last_temp = temp;
             last_hum = hum;
         }
@@ -119,26 +124,47 @@ fn draw_text<T: DrawTarget<Color = Rgb565>>(
     display: &mut T,
     temp: u8,
     hum: u8,
+    fbuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 200 * 80]>,
 ) -> Result<(), T::Error> {
-    let temp_str = alloc::format!("Temperature: {} °C", temp);
-    let hum_str = alloc::format!("Humidity: {} %", hum);
-    let temp_character_style = MonoTextStyle::new(&FONT_10X20, Rgb565::new(31, 41, 0)); // White
-    let hum_character_style = MonoTextStyle::new(&FONT_10X20, Rgb565::new(0, 63, 31)); // White
+    // 1. 清空 FrameBuf
+    for pixel in fbuf.data.iter_mut() {
+        *pixel = Rgb565::BLACK;
+    }
+    
+    // 2. 在 FrameBuf 上绘制文本
+    let temp_str = alloc::format!("温度:{}°C", temp);
+    let hum_str = alloc::format!("湿度:{}%", hum);
+    let temp_character_style = BdfTextStyle::new(&REGULAR_FONT, Rgb565::new(31, 41, 0));
+    let hum_character_style = BdfTextStyle::new(&REGULAR_FONT, Rgb565::new(0, 63, 31));
 
+    // 在 FrameBuf 中心位置绘制文本
     Text::with_alignment(
         &temp_str,
-        display.bounding_box().center() + Point::new(0, -20),
+        fbuf.bounding_box().center() + Point::new(0, 10),
         temp_character_style,
         Alignment::Center,
     )
-    .draw(display)?;
+    .draw(&mut *fbuf).unwrap();
     Text::with_alignment(
         &hum_str,
-        display.bounding_box().center() + Point::new(0, -40),
+        fbuf.bounding_box().center() + Point::new(0, -10),
         hum_character_style,
         Alignment::Center,
     )
-    .draw(display)?;
+    .draw(&mut *fbuf).unwrap();
+    
+    // 3. 计算目标位置（屏幕中心偏移）
+    let display_center = display.bounding_box().center();
+    let fbuf_size = fbuf.size();
+    let target_point = Point::new(
+        display_center.x - (fbuf_size.width as i32 / 2),
+        display_center.y - (fbuf_size.height as i32 / 2) - 30,
+    );
+    
+    // 4. 使用 fill_contiguous 一次性写入显示器，避免闪烁
+    let area = Rectangle::new(target_point, fbuf_size);
+    display.fill_contiguous(&area, fbuf.data.iter().copied())?;
+    
     Ok(())
 }
 fn cpu1_task(delay: &Delay, dht11_pin: Flex<'static>) -> ! {
