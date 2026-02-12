@@ -1,0 +1,45 @@
+[package]
+edition      = "2024"
+name         = "led"
+rust-version = "1.88"
+version      = "0.1.0"
+
+[[bin]]
+name = "showimg"
+path = "./src/bin/main.rs"
+
+
+[dependencies]
+esp-hal = { version = "~1.0", features = [ "esp32s3","unstable"] }
+anyhow      = {version = "=1.0.101", default-features = false}
+esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32s3"] }
+critical-section = "1.2.0"
+esp-alloc        = { version = "0.9.0" }
+panic-rtt-target = { version = "0.2.0"}
+rtt-target       = { version = "0.6.2" }
+mipidsi = "0.9.0"
+embedded-graphics = "0.8.1"
+esp-rtos = { version = "0.2.0", features = ["esp32s3"] }
+embedded-hal-bus = "0.3.0"
+tinytga = "0.5.0"
+tinybmp = "0.7.0"
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
+
+[profile.release]
+codegen-units    = 1     # LLVM can perform better optimizations using a single thread
+debug            = 2
+debug-assertions = false
+incremental      = false
+lto              = 'fat'
+opt-level        = 's'
+overflow-checks  = false
+
+[build-dependencies]
+embuild = "*"
+anyhow = "1"
+
+[dev-dependencies]
+image ={ version = "0.25.9"}
