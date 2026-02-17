@@ -1,0 +1,40 @@
+export component Recipe {
+    in-out property <int> counter: 0;
+
+    Rectangle {
+        background: #1a1a2e;
+        
+        Text {
+            text: "Hello Slint!";
+            color: #ffffff;
+            font-size: 24px;
+            x: 60px;
+            y: 40px;
+        }
+
+        Text {
+            text: "Counter: " + counter;
+            color: #00ff00;
+            font-size: 20px;
+            x: 70px;
+            y: 100px;
+        }
+
+        Rectangle {
+            x: 60px;
+            y: 150px;
+            width: 120px;
+            height: 40px;
+            background: #e94560;
+            border-radius: 8px;
+            
+            Text {
+                text: "Button";
+                color: #ffffff;
+                font-size: 16px;
+                x: 40px;
+                y: 12px;
+            }
+        }
+    }
+}
