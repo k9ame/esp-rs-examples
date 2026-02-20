@@ -101,9 +101,9 @@ checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
 name = "anyhow"
-version = "1.0.101"
+version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "arbitrary"
@@ -2840,29 +2840,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
-name = "led"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "display-interface",
- "embedded-graphics",
- "embedded-graphics-core",
- "embedded-graphics-framebuf",
- "embedded-hal 1.0.0",
- "embedded-hal-bus",
- "embuild",
- "esp-alloc",
- "esp-bootloader-esp-idf",
- "esp-hal",
- "image",
- "mipidsi",
- "panic-rtt-target",
- "rtt-target",
- "slint",
- "slint-build",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4648,6 +4625,29 @@ dependencies = [
  "proc-macro2",
  "quote",
  "spin_on",
+]
+
+[[package]]
+name = "slintui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "display-interface",
+ "embedded-graphics",
+ "embedded-graphics-core",
+ "embedded-graphics-framebuf",
+ "embedded-hal 1.0.0",
+ "embedded-hal-bus",
+ "embuild",
+ "esp-alloc",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "image",
+ "mipidsi",
+ "panic-rtt-target",
+ "rtt-target",
+ "slint",
+ "slint-build",
 ]
 
 [[package]]
