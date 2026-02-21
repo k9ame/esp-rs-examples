@@ -1,28 +1,28 @@
 [package]
 edition      = "2024"
-name         = "showimg"
+name         = "joystick"
 rust-version = "1.88"
 version      = "0.1.0"
 
 [[bin]]
-name = "showimg"
+name = "joystick"
 path = "./src/bin/main.rs"
 
-
 [dependencies]
-esp-hal = { version = "~1.0", features = [ "esp32s3","unstable"] }
-anyhow      = {version = "=1.0.100", default-features = false}
+esp-hal = { version = "~1.0", features = [ "esp32s3","unstable","defmt"] }
+anyhow      = {version = "=1.0.102", default-features = false}
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32s3"] }
 critical-section = "1.2.0"
-esp-alloc        = { version = "0.9.0" }
-panic-rtt-target = { version = "0.2.0"}
-rtt-target       = { version = "0.6.2" }
+esp-alloc        = "0.9.0"
+rtt-target       = "0.6.2"
+defmt = "1.0.1"
+defmt-rtt = "1.1.0"
+nb = "1.1.0"
 mipidsi = "0.10.0"
 embedded-graphics = "0.8.2"
-esp-rtos = { version = "0.2.0", features = ["esp32s3"] }
 embedded-hal-bus = "0.3.0"
-tinytga = "0.5.0"
-tinybmp = "0.7.0"
+embedded-graphics-framebuf = "0.5.0"
+
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization
@@ -40,6 +40,3 @@ overflow-checks  = false
 [build-dependencies]
 embuild = "*"
 anyhow = "1"
-
-[dev-dependencies]
-image ={ version = "0.25.9"}
