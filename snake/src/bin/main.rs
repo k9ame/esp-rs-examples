@@ -21,7 +21,6 @@ use esp_hal::{
     handler, ram,
     spi::master::Config, 
 };
-use embedded_graphics_framebuf::FrameBuf;
 use embedded_graphics::{prelude::{Primitive, RgbColor}, primitives::{PrimitiveStyle, Rectangle}};
 use embedded_graphics::{
     Drawable,
@@ -48,7 +47,8 @@ static Z_BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 #[allow(clippy::large_stack_frames)]
 #[main]
 fn main() -> ! {
-    esp_alloc::heap_allocator!(size: 128 * 1024);
+    // 增量更新方案只需要很小的堆内存（约4KB用于蛇数据结构）
+    esp_alloc::heap_allocator!(size: 8 * 1024);
 
     let cpu_clock = hal::clock::CpuClock::max();
     let config = hal::Config::default().with_cpu_clock(cpu_clock);
@@ -106,11 +106,6 @@ fn main() -> ! {
         .unwrap();
     display.clear(Rgb565::BLACK).unwrap();
 
-    // 创建帧缓冲区（全屏 240x240，使用 Box 分配到堆上）
-    let data_boxed = alloc::boxed::Box::new([Rgb565::BLACK; 240 * 240]);
-    let data: &'static mut [Rgb565; 240 * 240] = alloc::boxed::Box::leak(data_boxed);
-    let mut fbuf: FrameBuf<Rgb565, &'static mut [Rgb565; 240 * 240]> = FrameBuf::new(data, 240, 240);
-
     // 方向判断参数
     const CENTER: u16 = 3900;       // 摇杆中点值
     const DEAD_ZONE: u16 = 100;     // 死区范围
@@ -119,15 +114,15 @@ fn main() -> ! {
     let mut game = Game::new();
     println!("贪吃蛇游戏开始！");
 
+    // 绘制初始画面
+    draw_initial_screen(&mut display, &game);
+
     loop {
         // 读取摇杆
         let x_value: u16 = nb::block!(adc1.read_oneshot(&mut x_adc)).unwrap();
         let y_value: u16 = nb::block!(adc1.read_oneshot(&mut y_adc)).unwrap();
 
-        // 打印摇杆值（调试用）
-        // println!("X: {}, Y: {}", x_value, y_value);
-
-        // 方向判断（使用原始代码的逻辑）
+        // 方向判断
         let x_dir = if x_value < CENTER - DEAD_ZONE {
             -1  // 左
         } else if x_value > CENTER + DEAD_ZONE {
@@ -157,9 +152,8 @@ fn main() -> ! {
             _ => None,
         };
 
-        // 直接设置方向
+        // 设置方向
         if let Some(dir) = current_dir {
-            println!("检测到方向: {:?}", dir);
             game.set_direction(dir);
         }
 
@@ -171,28 +165,30 @@ fn main() -> ! {
             println!("游戏结束！最终得分: {}", game.score);
             delay.delay_millis(2000);
             game.reset();
+            // 重绘整个屏幕
+            display.clear(Rgb565::BLACK).unwrap();
+            draw_initial_screen(&mut display, &game);
             println!("游戏重新开始！");
             continue;
         }
 
-        // 绘制游戏到帧缓冲区
-        draw_game_to_buffer(&mut fbuf, &game);
-
-        // 将帧缓冲区绘制到屏幕
-        let area = Rectangle::new(Point::new(0, 0), Size::new(240, 240));
-        display.fill_contiguous(&area, fbuf.data.iter().copied()).unwrap();
+        // 增量更新屏幕
+        update_screen(&mut display, &game);
 
         // 游戏速度控制
         delay.delay_millis(150);
     }
 }
 
-/// 绘制游戏画面到帧缓冲区
-fn draw_game_to_buffer(fbuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 240 * 240]>, game: &Game) {
-    // 清空缓冲区
-    for pixel in fbuf.data.iter_mut() {
-        *pixel = Rgb565::BLACK;
-    }
+/// 绘制初始画面
+fn draw_initial_screen<D: DrawTarget<Color = Rgb565>>(display: &mut D, game: &Game)
+where
+    <D as DrawTarget>::Error: core::fmt::Debug,
+{
+    // 绘制边框
+    let border_style = PrimitiveStyle::with_stroke(Rgb565::WHITE, 1);
+    let border = Rectangle::new(Point::new(0, 0), Size::new(SCREEN_SIZE as u32, SCREEN_SIZE as u32));
+    border.into_styled(border_style).draw(display).unwrap();
 
     // 绘制蛇
     for (i, pos) in game.snake.iter().enumerate() {
@@ -206,7 +202,7 @@ fn draw_game_to_buffer(fbuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 240 * 240]>, ga
             Point::new((pos.x * GRID_SIZE) as i32, (pos.y * GRID_SIZE) as i32),
             Size::new(GRID_SIZE as u32, GRID_SIZE as u32)
         );
-        area.into_styled(PrimitiveStyle::with_fill(color)).draw(fbuf).unwrap();
+        area.into_styled(PrimitiveStyle::with_fill(color)).draw(display).unwrap();
     }
 
     // 绘制食物
@@ -214,12 +210,47 @@ fn draw_game_to_buffer(fbuf: &mut FrameBuf<Rgb565, &mut [Rgb565; 240 * 240]>, ga
         Point::new((game.food.x * GRID_SIZE) as i32, (game.food.y * GRID_SIZE) as i32),
         Size::new(GRID_SIZE as u32, GRID_SIZE as u32)
     );
-    food_area.into_styled(PrimitiveStyle::with_fill(Rgb565::RED)).draw(fbuf).unwrap();
+    food_area.into_styled(PrimitiveStyle::with_fill(Rgb565::RED)).draw(display).unwrap();
+}
 
-    // 绘制边框
-    let border_style = PrimitiveStyle::with_stroke(Rgb565::WHITE, 1);
-    let border = Rectangle::new(Point::new(0, 0), Size::new(SCREEN_SIZE as u32, SCREEN_SIZE as u32));
-    border.into_styled(border_style).draw(fbuf).unwrap();
+/// 增量更新屏幕（只更新变化的部分）
+fn update_screen<D: DrawTarget<Color = Rgb565>>(display: &mut D, game: &Game)
+where
+    <D as DrawTarget>::Error: core::fmt::Debug,
+{
+    // 1. 清除旧的蛇尾位置
+    let tail_area = Rectangle::new(
+        Point::new((game.prev_tail.x * GRID_SIZE) as i32, (game.prev_tail.y * GRID_SIZE) as i32),
+        Size::new(GRID_SIZE as u32, GRID_SIZE as u32)
+    );
+    tail_area.into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK)).draw(display).unwrap();
+
+    // 2. 绘制新的蛇头
+    let head = game.snake.first().unwrap();
+    let head_area = Rectangle::new(
+        Point::new((head.x * GRID_SIZE) as i32, (head.y * GRID_SIZE) as i32),
+        Size::new(GRID_SIZE as u32, GRID_SIZE as u32)
+    );
+    head_area.into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN)).draw(display).unwrap();
+
+    // 3. 如果吃到食物，绘制新的食物
+    if game.food_eaten {
+        let food_area = Rectangle::new(
+            Point::new((game.food.x * GRID_SIZE) as i32, (game.food.y * GRID_SIZE) as i32),
+            Size::new(GRID_SIZE as u32, GRID_SIZE as u32)
+        );
+        food_area.into_styled(PrimitiveStyle::with_fill(Rgb565::RED)).draw(display).unwrap();
+    }
+
+    // 4. 将旧的蛇头变成蛇身（如果蛇长度>1）
+    if game.snake.len() > 1 {
+        let old_head = game.snake.get(1).unwrap();
+        let body_area = Rectangle::new(
+            Point::new((old_head.x * GRID_SIZE) as i32, (old_head.y * GRID_SIZE) as i32),
+            Size::new(GRID_SIZE as u32, GRID_SIZE as u32)
+        );
+        body_area.into_styled(PrimitiveStyle::with_fill(Rgb565::new(0, 200 >> 3, 0))).draw(display).unwrap();
+    }
 }
 
 #[handler]

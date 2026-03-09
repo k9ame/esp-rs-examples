@@ -66,6 +66,8 @@ pub struct Game {
     pub food: Position,
     pub score: u16,
     pub game_over: bool,
+    pub prev_tail: Position,      // 上一帧的蛇尾位置（用于增量更新）
+    pub food_eaten: bool,         // 本帧是否吃到食物
 }
 
 impl Game {
@@ -87,6 +89,8 @@ impl Game {
             food: Position { x: 0, y: 0 },
             score: 0,
             game_over: false,
+            prev_tail: Position { x: start_x - 2, y: start_y },
+            food_eaten: false,
         });
         game.spawn_food();
         game
@@ -129,9 +133,12 @@ impl Game {
             return;
         }
 
+        // 记录当前蛇尾位置（用于增量更新时清除）
+        self.prev_tail = *self.snake.last().unwrap();
+        self.food_eaten = false;
+
         // 计算新头部位置
         let head = self.snake.first().unwrap();
-        // defmt::println!("更新: 方向={}, 蛇头位置=({},{})", self.direction, head.x, head.y);
         
         let new_head = match self.direction {
             Direction::Up => Position { x: head.x, y: head.y.wrapping_sub(1) },
@@ -160,6 +167,7 @@ impl Game {
         if new_head.x == self.food.x && new_head.y == self.food.y {
             self.score += 1;
             self.spawn_food();
+            self.food_eaten = true;
         } else {
             self.snake.pop();
         }
