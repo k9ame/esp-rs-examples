@@ -1,0 +1,65 @@
+[package]
+edition      = "2024"
+name         = "xiaoai-led-c3"
+rust-version = "1.88"
+version      = "0.1.0"
+
+[[bin]]
+name = "xiaoai-led-c3"
+path = "./src/bin/main.rs"
+
+[dependencies]
+esp-hal = { version = "~1.0", features = ["esp32c3", "unstable", "rt"] }
+anyhow      = {version = "=1.0.100", default-features = false}
+esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32c3"] }
+critical-section = "1.2.0"
+esp-alloc        = { version = "0.9.0", features = ["compat"] }
+
+# Embassy async runtime
+embassy-executor = "0.9"
+embassy-time = "0.5"
+embassy-net = { version = "0.8", features = [
+  "dhcpv4",
+  "dns",
+  "medium-ethernet",
+  "proto-ipv4",
+  "tcp",
+  "udp",
+] }
+embassy-sync = "0.7"
+embassy-futures = "0.1"
+static_cell = "2"
+heapless = "0.9"
+
+# WiFi and networking
+esp-radio = { version = "0.17", features = ["esp32c3", "wifi", "log-04", "esp-alloc", "unstable"] }
+esp-rtos = { version = "0.2", features = ["esp32c3", "esp-radio", "esp-alloc", "embassy"] }
+
+# MQTT client
+mqttrust = { git = "https://github.com/BlackbirdHQ/mqttrust", branch = "master", default-features = false, features = ["mqttv3"] }
+
+# Logging
+log = "0.4"
+esp-println = { version = "0.14", features = ["esp32c3", "log-04"] }
+
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
+
+[profile.release]
+codegen-units    = 1     # LLVM can perform better optimizations using a single thread
+debug            = 2
+debug-assertions = false
+incremental      = false
+lto              = 'fat'
+opt-level        = 's'
+overflow-checks  = false
+
+[profile.dev.package.esp-radio]
+opt-level = 3
+
+[build-dependencies]
+embuild = "*"
+anyhow = "1"
+dotenv = "0.15"
